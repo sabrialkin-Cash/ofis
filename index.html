@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ofis Görüntüleyici</title>
+<meta name="theme-color" content="#2563eb">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ofis">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<script src="lib/pdf.min.js"></script>
+<script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.worker.min.js';</script>
+<script src="lib/mammoth.browser.min.js"></script>
+<script src="lib/xlsx.full.min.js"></script>
+<script src="lib/jszip.min.js"></script>
+<style>
+  :root {
+    --bg: #f3f4f6; --card: #ffffff; --ink: #111827; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #2563eb; --accent-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1115; --card: #1a1d24; --ink: #e5e7eb; --muted: #9ca3af; --line: #2a2f3a; --accent: #3b82f6; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  header { position: sticky; top: 0; z-index: 10; background: var(--card);
+    border-bottom: 1px solid var(--line); padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+  header h1 { font-size: 17px; margin: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btn { appearance: none; border: 0; border-radius: 10px; padding: 10px 14px; font-size: 15px; font-weight: 600;
+    background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+  .btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  main { padding: 14px; max-width: 1000px; margin: 0 auto; }
+  .drop { border: 2px dashed var(--line); border-radius: 16px; padding: 36px 18px; text-align: center; background: var(--card); }
+  .drop.over { border-color: var(--accent); }
+  .drop .big { font-size: 46px; }
+  .drop p { color: var(--muted); margin: 8px 0 18px; }
+  .types { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
+  .chip { font-size: 12px; font-weight: 700; padding: 5px 9px; border-radius: 999px; background: var(--bg); color: var(--muted); }
+  .status { text-align: center; color: var(--muted); padding: 30px 0; }
+  .err { color: #dc2626; text-align: center; padding: 20px; }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar .info { color: var(--muted); font-size: 13px; flex: 1; }
+  /* PDF */
+  .pdf-page { background: #fff; margin: 0 auto 12px; box-shadow: 0 1px 4px rgba(0,0,0,.18); position: relative; }
+  .pdf-page canvas { width: 100%; height: 100%; display: block; }
+  .pdf-page .num { position: absolute; right: 6px; bottom: 4px; font-size: 11px; color: #9ca3af; }
+  /* DOCX */
+  .doc { background: #fff; color: #111; padding: 22px 18px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,.18);
+    line-height: 1.55; overflow-wrap: anywhere; font-family: Calibri, Carlito, Arial, sans-serif; }
+  .doc img { max-width: 100%; height: auto; }
+  .doc table { border-collapse: collapse; max-width: 100%; display: block; overflow-x: auto; }
+  .doc td, .doc th { border: 1px solid #ccc; padding: 4px 6px; vertical-align: top; }
+  /* XLSX */
+  .tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; }
+  .tab { flex: none; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px;
+    padding: 7px 12px; font-size: 14px; cursor: pointer; }
+  .tab.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .sheet { overflow: auto; background: #fff; color: #111; border-radius: 6px; max-height: calc(100vh - 180px);
+    box-shadow: 0 1px 4px rgba(0,0,0,.18); -webkit-overflow-scrolling: touch; }
+  .sheet table { border-collapse: collapse; font-size: 13px; }
+  .sheet td, .sheet th { border: 1px solid #d1d5db; padding: 4px 8px; white-space: nowrap; }
+  .sheet tr:first-child td { background: #f3f4f6; font-weight: 600; position: sticky; top: 0; }
+  .sheet .rh { background: #f3f4f6; color: #6b7280; font-size: 11px; text-align: right; position: sticky; left: 0; }
+  /* PPTX */
+  .slide { position: relative; width: 100%; background: #fff; color: #000; overflow: hidden; margin: 0 auto 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.25); container-type: inline-size; border-radius: 4px; }
+  .slide .el { position: absolute; overflow: hidden; }
+  .slide .el img { width: 100%; height: 100%; object-fit: fill; display: block; }
+  .slide .tx { display: flex; flex-direction: column; height: 100%; padding: 0.4cqw 0.8cqw; line-height: 1.15; overflow-wrap: anywhere; }
+  .slide .tx p { margin: 0; }
+  .slide table { width: 100%; height: 100%; border-collapse: collapse; }
+  .slide td { border: 0.1cqw solid #999; padding: 0.3cqw 0.5cqw; vertical-align: top; }
+  .slide-label { font-size: 12px; color: var(--muted); margin: 0 0 4px 2px; }
+  /* text / image */
+  pre.txt { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--card); padding: 14px; border-radius: 8px; font-size: 13px; }
+  .imgview img { max-width: 100%; display: block; margin: 0 auto; }
+  input[type=file] { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">📂 Ofis Görüntüleyici</h1>
+  <button class="btn ghost" id="closeBtn" hidden>Kapat</button>
+  <button class="btn" id="openBtn">Dosya Aç</button>
+</header>
+<main id="main"></main>
+<input type="file" id="file"
+  accept=".pdf,.docx,.xlsx,.xls,.xlsm,.ods,.csv,.pptx,.txt,.md,.json,.xml,.log,.jpg,.jpeg,.png,.gif,.webp,.svg,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/*,image/*">
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const main = $('#main'), fileInput = $('#file'), titleEl = $('#title'), closeBtn = $('#closeBtn');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function home() {
+  titleEl.textContent = '📂 Ofis Görüntüleyici';
+  closeBtn.hidden = true;
+  main.innerHTML = `
+    <div class="drop" id="drop">
+      <div class="big">📄</div>
+      <h2 style="margin:6px 0 0">Bir dosya seçin</h2>
+      <p>Telefonunuzdaki belgeyi seçin, burada görüntüleyin.<br>Dosyalar cihazınızdan çıkmaz.</p>
+      <button class="btn" id="pick">Dosya Seç</button>
+      <div class="types">
+        <span class="chip">PDF</span><span class="chip">DOCX</span><span class="chip">XLSX / XLS</span>
+        <span class="chip">PPTX</span><span class="chip">CSV</span><span class="chip">TXT</span><span class="chip">Resim</span>
+      </div>
+    </div>`;
+  $('#pick').onclick = () => fileInput.click();
+  const d = $('#drop');
+  d.ondragover = e => { e.preventDefault(); d.classList.add('over'); };
+  d.ondragleave = () => d.classList.remove('over');
+  d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); if (e.dataTransfer.files[0]) openFile(e.dataTransfer.files[0]); };
+}
+
+$('#openBtn').onclick = () => fileInput.click();
+closeBtn.onclick = home;
+fileInput.onchange = () => { if (fileInput.files[0]) openFile(fileInput.files[0]); fileInput.value = ''; };
+
+async function openFile(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  titleEl.textContent = file.name;
+  closeBtn.hidden = false;
+  main.innerHTML = '<div class="status">Açılıyor…</div>';
+  window.scrollTo(0, 0);
+  try {
+    const buf = await file.arrayBuffer();
+    if (ext === 'pdf') await showPdf(buf);
+    else if (ext === 'docx') await showDocx(buf);
+    else if (['xlsx', 'xls', 'xlsm', 'ods', 'csv'].includes(ext)) showSheet(buf, ext);
+    else if (ext === 'pptx') await showPptx(buf);
+    else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext) || file.type.startsWith('image/'))
+      main.innerHTML = `<div class="imgview"><img src="${URL.createObjectURL(file)}" alt=""></div>`;
+    else if (['txt', 'md', 'json', 'xml', 'log', 'html', 'js', 'css'].includes(ext) || file.type.startsWith('text/'))
+      main.innerHTML = `<pre class="txt">${esc(new TextDecoder().decode(buf))}</pre>`;
+    else if (ext === 'doc' || ext === 'ppt')
+      throw new Error('Eski .' + ext + ' biçimi desteklenmiyor. Lütfen .' + ext + 'x olarak kaydedilmiş sürümünü açın.');
+    else throw new Error('Bu dosya türü desteklenmiyor: .' + ext);
+  } catch (e) {
+    console.error(e);
+    main.innerHTML = `<div class="err">⚠️ Dosya açılamadı.<br><small>${esc(e.message || e)}</small></div>`;
+  }
+}
+
+/* ---------- PDF ---------- */
+async function showPdf(buf) {
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  main.innerHTML = `<div class="toolbar"><span class="info">${pdf.numPages} sayfa</span>
+    <button class="btn ghost" id="zo">−</button><button class="btn ghost" id="zi">+</button></div><div id="pages"></div>`;
+  const pages = $('#pages');
+  let zoom = 1;
+  const holders = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const vp = page.getViewport({ scale: 1 });
+    const div = document.createElement('div');
+    div.className = 'pdf-page';
+    div.dataset.ratio = vp.height / vp.width;
+    div.innerHTML = `<span class="num">${i}</span>`;
+    div._page = page;
+    pages.appendChild(div);
+    holders.push(div);
+  }
+  const size = () => {
+    const w = Math.min(main.clientWidth - 28, 1000) * zoom;
+    holders.forEach(d => { d.style.width = w + 'px'; d.style.height = w * d.dataset.ratio + 'px'; });
+    pages.style.overflowX = zoom > 1 ? 'auto' : '';
+  };
+  const render = async d => {
+    if (d._busy) return;
+    d._busy = true;
+    const w = parseFloat(d.style.width);
+    if (d._w === w) { d._busy = false; return; }
+    const page = d._page, vp1 = page.getViewport({ scale: 1 });
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const vp = page.getViewport({ scale: (w / vp1.width) * dpr });
+    const c = document.createElement('canvas');
+    c.width = vp.width; c.height = vp.height;
+    await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    d.querySelector('canvas')?.remove();
+    d.prepend(c);
+    d._w = w; d._busy = false;
+  };
+  const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && render(e.target)), { rootMargin: '600px' });
+  size();
+  holders.forEach(d => io.observe(d));
+  const rezoom = z => { zoom = Math.max(0.5, Math.min(3, z)); size(); holders.forEach(d => { io.unobserve(d); io.observe(d); }); };
+  $('#zi').onclick = () => rezoom(zoom + 0.25);
+  $('#zo').onclick = () => rezoom(zoom - 0.25);
+}
+
+/* ---------- DOCX ---------- */
+async function showDocx(buf) {
+  const res = await mammoth.convertToHtml({ arrayBuffer: buf });
+  main.innerHTML = `<div class="doc">${res.value || '<p><i>Belge boş görünüyor.</i></p>'}</div>`;
+}
+
+/* ---------- XLSX / XLS / CSV ---------- */
+function showSheet(buf, ext) {
+  const wb = ext === 'csv'
+    ? XLSX.read(new TextDecoder().decode(buf), { type: 'string' })
+    : XLSX.read(buf, { type: 'array', cellDates: true });
+  main.innerHTML = `<div class="tabs" id="tabs"></div><div class="sheet" id="sheet"></div>`;
+  const tabs = $('#tabs'), sheet = $('#sheet');
+  const show = name => {
+    [...tabs.children].forEach(b => b.classList.toggle('on', b.textContent === name));
+    const ws = wb.Sheets[name];
+    if (!ws || !ws['!ref']) { sheet.innerHTML = '<div class="status">Bu sayfa boş.</div>'; return; }
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: true });
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const cols = range.e.c - range.s.c + 1;
+    let h = '<table><tr><td class="rh"></td>';
+    for (let c = 0; c < cols; c++) h += `<td>${XLSX.utils.encode_col(range.s.c + c)}</td>`;
+    h += '</tr>';
+    const max = Math.min(rows.length, 5000);
+    for (let r = 0; r < max; r++) {
+      h += `<tr><td class="rh">${range.s.r + r + 1}</td>`;
+      for (let c = 0; c < cols; c++) h += `<td>${esc(rows[r][c] ?? '')}</td>`;
+      h += '</tr>';
+    }
+    h += '</table>';
+    if (rows.length > max) h += `<div class="status">İlk ${max} satır gösteriliyor (toplam ${rows.length}).</div>`;
+    sheet.innerHTML = h;
+    sheet.scrollTo(0, 0);
+  };
+  wb.SheetNames.forEach(n => {
+    const b = document.createElement('button');
+    b.className = 'tab'; b.textContent = n; b.onclick = () => show(n);
+    tabs.appendChild(b);
+  });
+  if (wb.SheetNames.length < 2) tabs.style.display = 'none';
+  show(wb.SheetNames[0]);
+}
+
+/* ---------- PPTX ---------- */
+const ch = (el, n) => el ? [...el.children].filter(c => c.localName === n) : [];
+const c1 = (el, n) => ch(el, n)[0];
+const dd = (el, n) => el ? el.getElementsByTagNameNS('*', n)[0] : undefined;
+const parseXml = s => new DOMParser().parseFromString(s, 'application/xml');
+const RNS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+function resolvePath(base, target) {
+  if (target.startsWith('/')) return target.slice(1);
+  const parts = base.split('/'); parts.pop();
+  for (const p of target.split('/')) { if (p === '..') parts.pop(); else if (p !== '.') parts.push(p); }
+  return parts.join('/');
+}
+async function readRels(zip, path) {
+  const i = path.lastIndexOf('/');
+  const relPath = path.slice(0, i) + '/_rels/' + path.slice(i + 1) + '.rels';
+  const f = zip.file(relPath);
+  const map = {};
+  if (!f) return map;
+  const x = parseXml(await f.async('string'));
+  for (const r of x.getElementsByTagNameNS('*', 'Relationship'))
+    map[r.getAttribute('Id')] = { target: r.getAttribute('TargetMode') === 'External' ? null : resolvePath(path, r.getAttribute('Target')), type: r.getAttribute('Type') };
+  return map;
+}
+function xfrmOf(el) {
+  const x = dd(el, 'xfrm');
+  if (!x) return null;
+  const off = c1(x, 'off'), ext = c1(x, 'ext');
+  if (!off || !ext) return null;
+  return { x: +off.getAttribute('x'), y: +off.getAttribute('y'), w: +ext.getAttribute('cx'), h: +ext.getAttribute('cy') };
+}
+function colorOf(el, theme) {
+  if (!el) return null;
+  const s = dd(el, 'srgbClr');
+  if (s) return '#' + s.getAttribute('val');
+  const sc = dd(el, 'schemeClr');
+  if (sc && theme) return theme[sc.getAttribute('val')] || null;
+  return null;
+}
+async function loadTheme(zip, masterPath) {
+  const rels = await readRels(zip, masterPath);
+  const t = Object.values(rels).find(r => r.type.endsWith('/theme'));
+  const map = {};
+  if (!t || !zip.file(t.target)) return map;
+  const x = parseXml(await zip.file(t.target).async('string'));
+  const cs = dd(x, 'clrScheme');
+  if (cs) for (const c of cs.children) {
+    const s = dd(c, 'srgbClr'), sys = dd(c, 'sysClr');
+    map[c.localName] = s ? '#' + s.getAttribute('val') : sys ? '#' + (sys.getAttribute('lastClr') || '000000') : null;
+  }
+  map.tx1 = map.dk1; map.bg1 = map.lt1; map.tx2 = map.dk2; map.bg2 = map.lt2;
+  return map;
+}
+function phKey(sp) {
+  const ph = dd(c1(sp, 'nvSpPr') || c1(sp, 'nvPicPr') || sp, 'ph');
+  if (!ph) return null;
+  return { type: ph.getAttribute('type') || 'body', idx: ph.getAttribute('idx') };
+}
+function findPh(doc, key) {
+  if (!doc || !key) return null;
+  const sps = [...doc.getElementsByTagNameNS('*', 'sp')];
+  let m = key.idx != null && sps.find(s => { const k = phKey(s); return k && k.idx === key.idx; });
+  if (!m) m = sps.find(s => { const k = phKey(s); return k && k.type === key.type; });
+  if (!m && (key.type === 'ctrTitle')) m = sps.find(s => { const k = phKey(s); return k && k.type === 'title'; });
+  if (!m && (key.type === 'subTitle')) m = sps.find(s => { const k = phKey(s); return k && k.type === 'body'; });
+  return m || null;
+}
+
+async function showPptx(buf) {
+  const zip = await JSZip.loadAsync(buf);
+  const presPath = 'ppt/presentation.xml';
+  const pres = parseXml(await zip.file(presPath).async('string'));
+  const sz = dd(pres, 'sldSz');
+  const W = +sz.getAttribute('cx'), H = +sz.getAttribute('cy');
+  const presRels = await readRels(zip, presPath);
+  const ids = [...pres.getElementsByTagNameNS('*', 'sldId')].map(s => s.getAttributeNS(RNS, 'id'));
+  const slidePaths = ids.map(id => presRels[id]?.target).filter(Boolean);
+
+  main.innerHTML = `<div class="toolbar"><span class="info">${slidePaths.length} slayt</span></div><div id="slides"></div>`;
+  const wrap = $('#slides');
+  const pct = (v, t) => (v / t * 100) + '%';
+  const cqw = emu => (emu / W * 100) + 'cqw';
+  const imgCache = {};
+  const getImg = async path => {
+    if (!path || !zip.file(path)) return null;
+    if (imgCache[path]) return imgCache[path];
+    const ext = path.split('.').pop().toLowerCase();
+    if (['emf', 'wmf', 'tif', 'tiff'].includes(ext)) return null;
+    const blob = await zip.file(path).async('blob');
+    const typed = new Blob([blob], { type: ext === 'svg' ? 'image/svg+xml' : 'image/' + (ext === 'jpg' ? 'jpeg' : ext) });
+    return (imgCache[path] = URL.createObjectURL(typed));
+  };
+
+  for (let si = 0; si < slidePaths.length; si++) {
+    const sp = slidePaths[si];
+    const doc = parseXml(await zip.file(sp).async('string'));
+    const rels = await readRels(zip, sp);
+    const layoutRel = Object.values(rels).find(r => r.type.endsWith('/slideLayout'));
+    let layout = null, master = null, theme = {}, layoutRels = {}, masterRels = {};
+    if (layoutRel && zip.file(layoutRel.target)) {
+      layout = parseXml(await zip.file(layoutRel.target).async('string'));
+      layoutRels = await readRels(zip, layoutRel.target);
+      const mRel = Object.values(layoutRels).find(r => r.type.endsWith('/slideMaster'));
+      if (mRel && zip.file(mRel.target)) {
+        master = parseXml(await zip.file(mRel.target).async('string'));
+        masterRels = await readRels(zip, mRel.target);
+        theme = await loadTheme(zip, mRel.target);
+      }
+    }
+
+    const label = document.createElement('div');
+    label.className = 'slide-label'; label.textContent = 'Slayt ' + (si + 1);
+    const slide = document.createElement('div');
+    slide.className = 'slide';
+    slide.style.aspectRatio = W + ' / ' + H;
+    wrap.append(label, slide);
+
+    // background
+    for (const [d, r] of [[doc, rels], [layout, layoutRels], [master, masterRels]]) {
+      const bg = d && dd(d, 'bg');
+      if (!bg) continue;
+      const blip = dd(bg, 'blip');
+      if (blip) {
+        const u = await getImg(r[blip.getAttributeNS(RNS, 'embed')]?.target);
+        if (u) { slide.style.background = `url(${u}) center/cover`; break; }
+      }
+      const col = colorOf(dd(bg, 'solidFill') || dd(bg, 'bgRef'), theme);
+      if (col) { slide.style.background = col; break; }
+    }
+
+    // default text color from master
+    const defColor = theme.tx1 || '#000';
+
+    async function drawTree(tree, target, relMap, tf) {
+      for (const el of tree.children) {
+        const n = el.localName;
+        if (n === 'grpSp') {
+          const gx = dd(c1(el, 'grpSpPr'), 'xfrm');
+          let ntf = tf;
+          if (gx) {
+            const off = c1(gx, 'off'), ext = c1(gx, 'ext'), co = c1(gx, 'chOff'), ce = c1(gx, 'chExt');
+            if (off && ext && co && ce) {
+              const sx = (+ext.getAttribute('cx') || 1) / (+ce.getAttribute('cx') || 1);
+              const sy = (+ext.getAttribute('cy') || 1) / (+ce.getAttribute('cy') || 1);
+              const ox = +off.getAttribute('x') - +co.getAttribute('x') * sx;
+              const oy = +off.getAttribute('y') - +co.getAttribute('y') * sy;
+              ntf = p => tf({ x: ox + p.x * sx, y: oy + p.y * sy, w: p.w * sx, h: p.h * sy });
+            }
+          }
+          await drawTree(el, target, relMap, ntf);
+          continue;
+        }
+        if (!['sp', 'pic', 'graphicFrame', 'cxnSp'].includes(n)) continue;
+        let xf = xfrmOf(c1(el, 'spPr') || el);
+        if (n === 'graphicFrame') xf = xfrmOf(el);
+        const key = phKey(el);
+        let phLayout = null, phMaster = null;
+        if (key) { phLayout = findPh(layout, key); phMaster = findPh(master, key); }
+        if (!xf) xf = (phLayout && xfrmOf(c1(phLayout, 'spPr'))) || (phMaster && xfrmOf(c1(phMaster, 'spPr')));
+        if (!xf) continue;
+        xf = tf(xf);
+        const box = document.createElement('div');
+        box.className = 'el';
+        Object.assign(box.style, { left: pct(xf.x, W), top: pct(xf.y, H), width: pct(xf.w, W), height: pct(xf.h, H) });
+
+        if (n === 'pic') {
+          const blip = dd(el, 'blip');
+          const u = blip && await getImg(relMap[blip.getAttributeNS(RNS, 'embed')]?.target);
+          if (!u) continue;
+          box.innerHTML = `<img src="${u}" alt="">`;
+          target.appendChild(box);
+          continue;
+        }
+        if (n === 'graphicFrame') {
+          const tbl = dd(el, 'tbl');
+          if (!tbl) continue;
+          let h = '<table>';
+          for (const tr of ch(tbl, 'tr')) {
+            h += '<tr>';
+            for (const tc of ch(tr, 'tc')) {
+              if (tc.getAttribute('hMerge') || tc.getAttribute('vMerge')) continue;
+              const span = tc.getAttribute('gridSpan'), rs = tc.getAttribute('rowSpan');
+              const fill = colorOf(dd(c1(tc, 'tcPr'), 'solidFill'), theme);
+              h += `<td${span ? ` colspan="${span}"` : ''}${rs ? ` rowspan="${rs}"` : ''}${fill ? ` style="background:${fill}"` : ''}>${paras(c1(tc, 'txBody'), 1200)}</td>`;
+            }
+            h += '</tr>';
+          }
+          box.innerHTML = h + '</table>';
+          target.appendChild(box);
+          continue;
+        }
+        const spPr = c1(el, 'spPr');
+        const fillEl = spPr && c1(spPr, 'solidFill');
+        const fill = colorOf(fillEl, theme);
+        if (fill) box.style.background = fill;
+        const ln = spPr && c1(spPr, 'ln');
+        if (ln && !c1(ln, 'noFill')) {
+          const lc = colorOf(c1(ln, 'solidFill'), theme);
+          if (lc) box.style.border = `max(1px, ${cqw(+ln.getAttribute('w') || 9525)}) solid ${lc}`;
+        }
+        const geom = spPr && dd(spPr, 'prstGeom');
+        if (geom && geom.getAttribute('prst') === 'ellipse') box.style.borderRadius = '50%';
+        if (geom && geom.getAttribute('prst') === 'roundRect') box.style.borderRadius = '6%';
+        if (n === 'cxnSp') { box.style.overflow = 'visible'; target.appendChild(box); continue; }
+
+        const tx = c1(el, 'txBody');
+        if (tx && tx.textContent.trim()) {
+          const isTitle = key && /title|ctrTitle/i.test(key.type);
+          const defSz = isTitle ? 4000 : key ? 2000 : 1800;
+          // try default size from layout/master placeholder
+          let inhSz = null;
+          for (const p of [phLayout, phMaster]) {
+            const r = p && (dd(p, 'defRPr') || dd(p, 'rPr'));
+            if (r && r.getAttribute('sz')) { inhSz = +r.getAttribute('sz'); break; }
+          }
+          const mStyle = key && master && dd(master, isTitle ? 'titleStyle' : 'bodyStyle');
+          if (!inhSz && mStyle) {
+            const r = dd(mStyle, 'defRPr');
+            if (r && r.getAttribute('sz')) inhSz = +r.getAttribute('sz');
+          }
+          let defAlign = null;
+          for (const p of [phLayout, phMaster]) {
+            const l = p && dd(p, 'lvl1pPr');
+            if (l && l.getAttribute('algn')) { defAlign = l.getAttribute('algn'); break; }
+          }
+          if (!defAlign && mStyle) defAlign = dd(mStyle, 'lvl1pPr')?.getAttribute('algn') || null;
+          const useBullets = key && !isTitle && key.type === 'body' && mStyle;
+          const body = dd(tx, 'bodyPr');
+          const anchor = body && body.getAttribute('anchor');
+          const inner = document.createElement('div');
+          inner.className = 'tx';
+          inner.style.justifyContent = anchor === 'ctr' ? 'center' : anchor === 'b' ? 'flex-end' : 'flex-start';
+          const scale = dd(body, 'normAutofit')?.getAttribute('fontScale');
+          inner.innerHTML = paras(tx, inhSz || defSz, scale ? +scale / 100000 : 1, false, defAlign, useBullets ? mStyle : null);
+          box.appendChild(inner);
+        }
+        target.appendChild(box);
+      }
+    }
+
+    function paras(txBody, defSz, fscale = 1, bold = false, defAlign = null, bulletStyle = null) {
+      if (!txBody) return '';
+      let h = '';
+      for (const p of ch(txBody, 'p')) {
+        const pPr = c1(p, 'pPr');
+        const algn = (pPr && pPr.getAttribute('algn')) || defAlign;
+        const align = { ctr: 'center', r: 'right', just: 'justify' }[algn] || 'left';
+        const lvl = +(pPr && pPr.getAttribute('lvl') || 0);
+        let bullet = '';
+        if (pPr && c1(pPr, 'buChar')) bullet = c1(pPr, 'buChar').getAttribute('char') + ' ';
+        else if (bulletStyle && !(pPr && c1(pPr, 'buNone'))) {
+          const lp = dd(bulletStyle, 'lvl' + (lvl + 1) + 'pPr');
+          const bc = lp && c1(lp, 'buChar');
+          if (bc) bullet = bc.getAttribute('char') + ' ';
+        }
+        let runs = '', firstSz = null;
+        for (const r of p.children) {
+          if (r.localName === 'br') { runs += '<br>'; continue; }
+          if (r.localName !== 'r' && r.localName !== 'fld') continue;
+          const t = c1(r, 't');
+          if (!t) continue;
+          const rPr = c1(r, 'rPr');
+          const sz = (rPr && +rPr.getAttribute('sz')) || (dd(p, 'endParaRPr')?.getAttribute('sz') && +dd(p, 'endParaRPr').getAttribute('sz')) || defSz;
+          firstSz = firstSz || sz;
+          const st = [`font-size:${(sz * fscale / 100 * 12700 / W * 100).toFixed(3)}cqw`];
+          if (rPr?.getAttribute('b') === '1' || (bold && rPr?.getAttribute('b') !== '0')) st.push('font-weight:700');
+          if (rPr?.getAttribute('i') === '1') st.push('font-style:italic');
+          if (rPr?.getAttribute('u') && rPr.getAttribute('u') !== 'none') st.push('text-decoration:underline');
+          const col = rPr && colorOf(c1(rPr, 'solidFill'), theme);
+          if (col) st.push('color:' + col);
+          runs += `<span style="${st.join(';')}">${esc(t.textContent)}</span>`;
+        }
+        const fs = ((firstSz || defSz) * fscale / 100 * 12700 / W * 100).toFixed(3);
+        if (!runs) { h += `<p style="font-size:${fs}cqw">&nbsp;</p>`; continue; }
+        h += `<p style="text-align:${align};padding-left:${lvl * 3}cqw;font-size:${fs}cqw">${bullet ? `<span>${esc(bullet)}</span>` : ''}${runs}</p>`;
+      }
+      return h;
+    }
+
+    slide.style.color = defColor;
+    const tree = dd(doc, 'spTree');
+    if (tree) await drawTree(tree, slide, rels, p => p);
+  }
+}
+
+home();
+
+/* ---------- Uygulama (PWA) ---------- */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(e => console.warn('SW', e));
+}
+// Başka uygulamadan "Paylaş" ile gelen dosya (Android)
+if (new URLSearchParams(location.search).has('shared')) {
+  history.replaceState(null, '', './');
+  caches.open('ofis-shared').then(async c => {
+    const r = await c.match('shared-file');
+    if (!r) return;
+    const name = decodeURIComponent(r.headers.get('X-File-Name') || 'dosya');
+    const blob = await r.blob();
+    await c.delete('shared-file');
+    openFile(new File([blob], name, { type: blob.type }));
+  }).catch(() => {});
+}
+// Masaüstü Chrome: "Birlikte aç" ile gelen dosyalar
+if ('launchQueue' in window) {
+  launchQueue.setConsumer(async p => {
+    if (p.files && p.files[0]) openFile(await p.files[0].getFile());
+  });
+}
+// Ana ekrana ekle düğmesi (Android Chrome)
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); installEvt = e;
+  const b = document.createElement('button');
+  b.className = 'btn ghost'; b.textContent = 'Yükle'; b.id = 'installBtn';
+  b.onclick = async () => { installEvt.prompt(); await installEvt.userChoice; b.remove(); };
+  if (!$('#installBtn')) $('header').insertBefore(b, $('#openBtn'));
+});
+</script>
+</body>
+</html>

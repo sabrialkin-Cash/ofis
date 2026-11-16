@@ -1,0 +1,47 @@
+{
+  "name": "Ofis Görüntüleyici",
+  "short_name": "Ofis",
+  "description": "PDF, Word, Excel ve PowerPoint dosyalarını telefonda açın.",
+  "lang": "tr",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f4f6",
+  "theme_color": "#2563eb",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "share_target": {
+    "action": "./share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [{
+        "name": "file",
+        "accept": [
+          "application/pdf", ".pdf",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx",
+          "application/vnd.ms-excel", ".xls",
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx",
+          "text/csv", ".csv", "text/plain", ".txt", "image/*"
+        ]
+      }]
+    }
+  },
+  "file_handlers": [{
+    "action": "./",
+    "accept": {
+      "application/pdf": [".pdf"],
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+      "application/vnd.ms-excel": [".xls"],
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
+      "text/csv": [".csv"]
+    }
+  }]
+}
